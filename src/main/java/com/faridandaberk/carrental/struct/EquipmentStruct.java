@@ -1,4 +1,7 @@
 package com.faridandaberk.carrental.struct;
 
-public class EquipmentStruct {
-}
+public record EquipmentStruct(
+        String code,
+        String name,
+        Double price
+) {}

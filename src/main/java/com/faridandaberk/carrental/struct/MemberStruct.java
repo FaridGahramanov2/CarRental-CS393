@@ -1,4 +1,10 @@
 package com.faridandaberk.carrental.struct;
 
-public class MemberStruct {
-}
+public record MemberStruct(
+        String name,
+        String address,
+        String email,
+        String phone,
+        String drivingLicenseNumber
+) {}
+
