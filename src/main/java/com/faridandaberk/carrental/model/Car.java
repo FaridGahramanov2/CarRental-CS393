@@ -3,22 +3,31 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.*;
+import java.util.Set;
+
 
 
 @Entity
 public class Car {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+    @Column(unique = true, nullable = false)
     private String barcode;
-    private String licensePlateNumber;
-    private int passengerCapacity;
+    @Column(unique = true, nullable = false)
+    private String licensePlate;
+    private Integer passengerCapacity;
     private String brand;
     private String model;
-    private double mileage;
-    private String transmissionType;
-    private double dailyPrice;
-    private String status;
-
-
+    private Integer mileage;
+    @Enumerated(EnumType.STRING)
+    private TransmissionType transmissionType;
+    @Enumerated(EnumType.STRING)
+    private CarType carType;
+    @Enumerated(EnumType.STRING)
+    private CarStatus status;
+    private Double dailyPrice;
+    @OneToMany(mappedBy = "car")
+    private Set<Reservation> reservations;
 }
+
