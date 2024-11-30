@@ -16,6 +16,60 @@ public class Equipment {
     private String code;
     @Column(nullable = false)
     private String name;
+
+    public Equipment() {
+
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getCode() {
+        return code;
+    }
+
+    public void setCode(String code) {
+        this.code = code;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public Double getPrice() {
+        return price;
+    }
+
+    public void setPrice(Double price) {
+        this.price = price;
+    }
+
+    public Set<Reservation> getReservations() {
+        return reservations;
+    }
+
+    public void setReservations(Set<Reservation> reservations) {
+        this.reservations = reservations;
+    }
+
+    public Equipment(Long id, String code, String name, Double price, Set<Reservation> reservations) {
+        this.id = id;
+        this.code = code;
+        this.name = name;
+        this.price = price;
+        this.reservations = reservations;
+    }
+
+
     @Column(nullable = false)
     private Double price;
     @ManyToMany(mappedBy = "equipment")

@@ -2,7 +2,11 @@ package com.faridandaberk.carrental.struct;
 
 import com.faridandaberk.carrental.model.CarType;
 import com.faridandaberk.carrental.model.TransmissionType;
+import java.time.LocalDateTime;
 
+
+
+import java.time.LocalDate;
 import java.util.Date;
 
 public record RentedCarStruct(
@@ -11,9 +15,12 @@ public record RentedCarStruct(
         CarType carType,
         TransmissionType transmissionType,
         String barcode,
+
         String reservationNumber,
         String memberName,
-        Date dropOffDateTime,
+        LocalDateTime dropOffDateTime,
         String dropOffLocation,
-        Integer dayCount
+        long dayCount
+
+
 ) {}

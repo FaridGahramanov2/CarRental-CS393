@@ -4,11 +4,14 @@ import com.faridandaberk.carrental.model.CarType;
 import com.faridandaberk.carrental.model.TransmissionType;
 
 public record CarStruct(
-        String barcode,
         String brand,
         String model,
+        String barcode,
+
         CarType carType,
         TransmissionType transmissionType,
-        Integer mileage,
-        Double dailyPrice
+        int passengerCapacity,
+        double dailyPrice,
+        int mileage,
+        String licensePlate
 ) {}
