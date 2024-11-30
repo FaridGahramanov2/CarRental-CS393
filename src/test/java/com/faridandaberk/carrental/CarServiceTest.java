@@ -6,18 +6,19 @@ import com.faridandaberk.carrental.repository.LocationRepository;
 import com.faridandaberk.carrental.repository.MemberRepository;
 import com.faridandaberk.carrental.repository.ReservationRepository;
 import com.faridandaberk.carrental.services.CarService;
+import com.faridandaberk.carrental.services.MemberService;
+import com.faridandaberk.carrental.services.ReservationService;
 import com.faridandaberk.carrental.struct.CarStruct;
+import com.faridandaberk.carrental.struct.MemberStruct;
 import com.faridandaberk.carrental.struct.RentedCarStruct;
+import com.faridandaberk.carrental.struct.ReservationResponseStruct;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-import java.util.Collections;
-import java.util.HashSet;
+
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -26,7 +27,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CarServiceTest {
 
     @Autowired
+    private CarService carService;
+
+    @Autowired
+    private MemberService memberService;
+
+    @Autowired
+    private ReservationService reservationService;
+
+    @Autowired
     private ReservationRepository reservationRepository;
+
+
 
 
     @Autowired
@@ -35,11 +47,10 @@ class CarServiceTest {
     @Autowired
     private MemberRepository memberRepository;
 
-    @Autowired
-    private CarService carService;
+
 
     @Autowired
-    private CarRepository carRepository;  // Added for test setup
+    private CarRepository carRepository;
 
     @Test
     void searchAvailableCars_FindsNoCars_ReturnsEmptyList() {
@@ -88,60 +99,63 @@ class CarServiceTest {
 
     @Test
     void getAllRentedCars_WithRentedCars_ReturnsNonEmptyList() {
-        // Create and save a car with LOANED status
-        Car car = new Car();
-        car.setBarcode("TEST123");
-        car.setBrand("Toyota");
-        car.setModel("Corolla");
-        car.setCarType(CarType.STANDARD);
-        car.setTransmissionType(TransmissionType.MANUAL);
-        car.setPassengerCapacity(5);
-        car.setDailyPrice(100.0);
-        car.setMileage(15000);
-        car.setLicensePlate("34TEST123");
-        car.setStatus(CarStatus.LOANED);
-        car.setReservations(new HashSet<>());
-        car = carRepository.save(car); // Save and get the managed entity
 
-        // Create necessary related entities
-        Location location = new Location();
-        location.setCode("LOC1");
-        location.setName("Test Location");
-        location = locationRepository.save(location); // Save and get the managed entity
+        Location location1 = new Location();
+        location1.setCode("TEST_LOC_1");
+        location1.setName("Test Location 1");
+        locationRepository.save(location1);
 
-        // Create member with all required fields
-        Member member = new Member();
-        member.setName("Test Member");
-        member.setEmail("test@example.com");
-        member.setPhone("5551234567");
-        member.setAddress("123 Test St");
-        member.setDrivingLicenseNumber("TEST_DL_123");
-        member = memberRepository.save(member); // Save and get the managed entity
+        Location location2 = new Location();
+        location2.setCode("TEST_LOC_2");
+        location2.setName("Test Location 2");
+        locationRepository.save(location2);
 
-        // Create and add an active reservation
-        Reservation reservation = new Reservation();
-        reservation.setCar(car);
-        reservation.setStatus(ReservationStatus.ACTIVE);
-        reservation.setMember(member);
-        reservation.setDropOffLocation(location);
-        reservation.setPickUpDate(LocalDateTime.now());
-        reservation.setDropOffDate(LocalDateTime.now().plusDays(3));
-        reservation.setReservationNumber("RES123");
 
-        // Save the reservation
-        reservation = reservationRepository.save(reservation);
+        CarStruct carDTO = new CarStruct(
+                "Toyota",
+                "Corolla",
+                "TEST123",
+                CarType.STANDARD,
+                TransmissionType.MANUAL,
+                5,
+                100.0,
+                15000,
+                "34TEST123"
+        );
+        CarStruct savedCar = carService.addCar(carDTO);
 
-        // Update car's reservations set
-        car.getReservations().add(reservation);
-        carRepository.save(car);
+
+        MemberStruct memberDTO = new MemberStruct(
+                "Test Member",
+                "123 Test St",
+                "test@example.com",
+                "5551234567",
+                "TEST_DL_123"
+        );
+        MemberStruct savedMember = memberService.registerMember(memberDTO);
+
+
+        Member member = memberRepository.findByEmail("test@example.com")
+                .orElseThrow(() -> new RuntimeException("Member not found"));
+
+
+        ReservationResponseStruct reservation = reservationService.makeReservation(
+                savedCar.barcode(),
+                3,
+                member.getId(),
+                "TEST_LOC_1",
+                "TEST_LOC_2",
+                List.of(),
+                List.of()
+        );
 
         List<RentedCarStruct> result = carService.getAllRentedCars();
         assertThat(result).isNotEmpty();
+        assertThat(result.get(0).barcode()).isEqualTo(savedCar.barcode());
     }
-
     @Test
     void deleteCar_CarUsedInReservation_ReturnsFalse() {
-        // Create and save a car with LOANED status
+
         Car car = new Car();
         car.setBarcode("TEST123");
         car.setBrand("Toyota");
@@ -152,7 +166,7 @@ class CarServiceTest {
         car.setDailyPrice(100.0);
         car.setMileage(15000);
         car.setLicensePlate("TEST_DL_123");
-        car.setStatus(CarStatus.LOANED);  // Set status to LOANED to simulate car in use
+        car.setStatus(CarStatus.LOANED);
         carRepository.save(car);
 
         boolean result = carService.deleteCar("TEST123");

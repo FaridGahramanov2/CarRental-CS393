@@ -31,7 +31,7 @@ class ReservationServiceTest {
 
     @Test
     void makeReservation_MakesReservation_ReturnsReservationResponse() {
-        // Add a car
+        
         CarStruct carDTO = new CarStruct(
                 "Toyota",
                 "Corolla",
@@ -45,7 +45,7 @@ class ReservationServiceTest {
         );
         carService.addCar(carDTO);
 
-        // Add a member with unique identifiers
+
         MemberStruct memberDTO = new MemberStruct(
                 "John Doe",
                 "123 Main St",
@@ -55,7 +55,7 @@ class ReservationServiceTest {
         );
         MemberStruct savedMember = memberService.registerMember(memberDTO);
 
-        // Add equipment
+
         EquipmentStruct equipmentDTO = new EquipmentStruct(
                 "TEST_EQ_001",
                 "GPS",
@@ -63,7 +63,7 @@ class ReservationServiceTest {
         );
         equipmentService.addEquipment(equipmentDTO);
 
-        // Make reservation
+
         ReservationResponseStruct result = reservationService.makeReservation(
                 "123ABC",
                 7,
@@ -74,7 +74,7 @@ class ReservationServiceTest {
                 Arrays.asList("Additional Driver")
         );
 
-        // Assert
+
         assertThat(result).isNotNull();
         assertThat(result.reservationNumber()).isNotBlank();
         assertThat(result.pickupLocation()).isEqualTo("İstanbul Airport");

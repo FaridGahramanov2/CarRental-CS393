@@ -13,9 +13,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -42,39 +40,20 @@ public class ReservationService {
     public ReservationResponseStruct makeReservation(String carBarcode, int dayCount, Long memberId,
                                                      String pickupLocationCode, String dropoffLocationCode,
                                                      List<String> equipmentCodes, List<String> serviceCodes) {
-        // Find the car
-        Optional<Car> carOptional = carRepository.findByBarcode(carBarcode);
-        if (carOptional.isEmpty() || carOptional.get().getStatus() != CarStatus.AVAILABLE) {
-            throw new IllegalArgumentException("Car is not available for reservation.");
-        }
-        Car car = carOptional.get();
 
-        // Find the member
-        Optional<Member> memberOptional = memberRepository.findById(memberId);
-        if (memberOptional.isEmpty()) {
-            throw new IllegalArgumentException("Member not found.");
-        }
-        Member member = memberOptional.get();
+        Car car = carRepository.findByBarcode(carBarcode)
+                .orElseThrow(() -> new IllegalArgumentException("Car not found"));
 
-        // Find the pickup and dropoff locations
-        Optional<Location> pickupLocationOptional = locationRepository.findByCode(pickupLocationCode);
-        Optional<Location> dropoffLocationOptional = locationRepository.findByCode(dropoffLocationCode);
-        if (pickupLocationOptional.isEmpty() || dropoffLocationOptional.isEmpty()) {
-            throw new IllegalArgumentException("Location not found.");
-        }
-        Location pickupLocation = pickupLocationOptional.get();
-        Location dropoffLocation = dropoffLocationOptional.get();
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new IllegalArgumentException("Member not found"));
 
-        // Find the requested equipment and services
-        List<Equipment> equipment = equipmentRepository.findByNameIn(equipmentCodes);
-        List<com.faridandaberk.carrental.model.Service> services = serviceRepository.findByNameIn(serviceCodes);
+        Location pickupLocation = locationRepository.findByCode(pickupLocationCode)
+                .orElseThrow(() -> new IllegalArgumentException("Pickup location not found"));
 
-        // Calculate the total cost
-        double totalCost = car.getDailyPrice() * dayCount;
-        totalCost += equipment.stream().mapToDouble(Equipment::getPrice).sum();
-        totalCost += services.stream().mapToDouble(com.faridandaberk.carrental.model.Service::getPrice).sum();
+        Location dropoffLocation = locationRepository.findByCode(dropoffLocationCode)
+                .orElseThrow(() -> new IllegalArgumentException("Dropoff location not found"));
 
-        // Create the reservation
+
         Reservation reservation = new Reservation();
         reservation.setCar(car);
         reservation.setMember(member);
@@ -83,20 +62,42 @@ public class ReservationService {
         reservation.setPickUpDate(LocalDateTime.now());
         reservation.setDropOffDate(LocalDateTime.now().plusDays(dayCount));
         reservation.setReturnDate(LocalDateTime.now().plusDays(dayCount));
-        reservation.setStatus(ReservationStatus.CONFIRMED);
-        reservation.setEquipment(equipment);
-        reservation.setServices(services);
+        reservation.setStatus(ReservationStatus.ACTIVE);
         reservation.setReservationNumber(generateReservationNumber());
 
-        reservationRepository.save(reservation);
+        Reservation savedReservation = reservationRepository.save(reservation);
 
-        // Create the response struct
+
+        car.setStatus(CarStatus.LOANED);
+        carRepository.save(car);
+
         return new ReservationResponseStruct(
-                reservation.getReservationNumber(),
+                savedReservation.getReservationNumber(),
                 pickupLocation.getName(),
                 dropoffLocation.getName(),
-                totalCost
+                calculateTotalCost(car, dayCount, Collections.emptyList(), Collections.emptyList())
         );
+    }
+
+    private double calculateTotalCost(Car car, int dayCount, List<Equipment> equipment, List<com.faridandaberk.carrental.model.Service> services) {
+
+        double totalCost = car.getDailyPrice() * dayCount;
+
+
+        if (equipment != null) {
+            totalCost += equipment.stream()
+                    .mapToDouble(Equipment::getPrice)
+                    .sum();
+        }
+
+
+        if (services != null) {
+            totalCost += services.stream()
+                    .mapToDouble(com.faridandaberk.carrental.model.Service::getPrice)
+                    .sum();
+        }
+
+        return totalCost;
     }
 
     public boolean addServiceToReservation(String reservationNumber, String serviceCode) {

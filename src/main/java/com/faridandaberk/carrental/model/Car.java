@@ -4,6 +4,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.*;
+
+import java.util.HashSet;
 import java.util.Set;
 
 
@@ -44,7 +46,8 @@ public class Car {
         this.reservations = reservations;
     }
 
-    public Car(){}
+
+
 
 
     public Long getId() {
@@ -143,8 +146,12 @@ public class Car {
         this.reservations = reservations;
     }
 
-    @OneToMany(mappedBy = "car")
-    private Set<Reservation> reservations;
+    @OneToMany(mappedBy = "car", fetch = FetchType.EAGER)
+    private Set<Reservation> reservations = new HashSet<>();
+
+    public Car() {
+        this.reservations = new HashSet<>();  // Also initialize in constructor
+    }
 }
 
 

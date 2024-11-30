@@ -13,6 +13,9 @@ import java.util.Optional;
 
 @Repository
 public interface CarRepository extends JpaRepository<Car, Long> {
+
+
+
     Optional<Car> findByBarcode(String barcode);
     List<Car> findByCarTypeAndTransmissionTypeAndStatus(
             CarType carType,
@@ -21,4 +24,9 @@ public interface CarRepository extends JpaRepository<Car, Long> {
     );
 
     List<Car> findByStatusIn(Collection<CarStatus> statuses);
+
+
+
+
 }
+

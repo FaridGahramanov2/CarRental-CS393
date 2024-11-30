@@ -18,19 +18,19 @@ class MemberServiceTest {
 
     @Test
     void registerMember_RegistersMember_ReturnsMemberDTO() {
-        // Arrange
+
         MemberStruct memberDTO = new MemberStruct(
                 "John Doe",
                 "123 Main St",
-                "test.user@example.com",  // Using test-specific email
+                "test.user@example.com",
                 "555-1234",
-                "TEST_DL_123"  // Using test-specific license
+                "TEST_DL_123"
         );
 
-        // Act
+
         MemberStruct result = memberService.registerMember(memberDTO);
 
-        // Assert
+
         assertThat(result).isNotNull();
         assertThat(result.name()).isEqualTo("John Doe");
         assertThat(result.email()).isEqualTo("test.user@example.com");

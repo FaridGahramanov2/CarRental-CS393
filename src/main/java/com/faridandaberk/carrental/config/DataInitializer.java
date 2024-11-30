@@ -6,21 +6,28 @@ import jakarta.transaction.Transactional;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
+
 @Component
 public class DataInitializer implements CommandLineRunner {
+
+
+    private final  ReservationRepository reservationRepository;
     private final LocationRepository locationRepository;
     private final CarRepository carRepository;
     private final EquipmentRepository equipmentRepository;
     private final ServiceRepository serviceRepository;
     private final MemberRepository memberRepository;
 
-    public DataInitializer(LocationRepository locationRepository,
+    public DataInitializer(ReservationRepository reservationRepository, LocationRepository locationRepository,
                            CarRepository carRepository,
                            EquipmentRepository equipmentRepository,
                            ServiceRepository serviceRepository,
                            MemberRepository memberRepository) {
+        this.reservationRepository = reservationRepository;
         this.locationRepository = locationRepository;
         this.carRepository = carRepository;
         this.equipmentRepository = equipmentRepository;
@@ -36,6 +43,33 @@ public class DataInitializer implements CommandLineRunner {
         initializeEquipment();
         initializeServices();
         initializeMembers();
+        initializeReservations();
+    }
+
+    private void initializeReservations() {
+
+        Car car = carRepository.findByBarcode("CAR001").orElseThrow();
+        Member member = memberRepository.findByEmail("john@example.com").orElseThrow();
+        Location pickupLoc = locationRepository.findByCode("1").orElseThrow();
+        Location dropoffLoc = locationRepository.findByCode("2").orElseThrow();
+
+        Reservation reservation = new Reservation();
+        reservation.setCar(car);
+        reservation.setMember(member);
+        reservation.setPickUpLocation(pickupLoc);
+        reservation.setDropOffLocation(dropoffLoc);
+        reservation.setStatus(ReservationStatus.CONFIRMED);
+        reservation.setPickUpDate(LocalDateTime.now());
+        reservation.setDropOffDate(LocalDateTime.now().plusDays(3));
+        reservation.setReservationNumber("00000001");
+
+
+        List<Equipment> equipment = equipmentRepository.findAll();
+        List<Service> services = serviceRepository.findAll();
+        reservation.setEquipment(equipment);
+        reservation.setServices(services);
+
+        reservationRepository.save(reservation);
     }
 
     private void initializeLocations() {

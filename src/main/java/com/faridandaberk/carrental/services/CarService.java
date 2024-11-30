@@ -2,15 +2,13 @@ package com.faridandaberk.carrental.services;
 
 import com.faridandaberk.carrental.model.*;
 import com.faridandaberk.carrental.repository.CarRepository;
+import com.faridandaberk.carrental.repository.ReservationRepository;
 import com.faridandaberk.carrental.struct.CarStruct;
 import com.faridandaberk.carrental.struct.RentedCarStruct;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.time.Duration;
 
@@ -18,9 +16,11 @@ import java.time.Duration;
 @Transactional
 public class CarService {
     private final CarRepository carRepository;
+    private final ReservationRepository reservationRepository; // Add this
 
-    public CarService(CarRepository carRepository) {
+    public CarService(CarRepository carRepository, ReservationRepository reservationRepository) { // Update constructor
         this.carRepository = carRepository;
+        this.reservationRepository = reservationRepository;
     }
 
     public List<CarStruct> searchAvailableCars(CarType carType, TransmissionType transmissionType) {
@@ -32,34 +32,61 @@ public class CarService {
 
     public List<RentedCarStruct> getAllRentedCars() {
         List<Car> rentedCars = carRepository.findByStatusIn(Arrays.asList(CarStatus.LOANED, CarStatus.RESERVED));
-        return rentedCars.stream()
-                .map(car -> {
-                    Reservation reservation = car.getReservations().stream()
-                            .filter(r -> r.getStatus() == ReservationStatus.ACTIVE)
-                            .findFirst()
-                            .orElse(null);
-                    if (reservation == null) return null;
+        List<Reservation> activeReservations = reservationRepository.findByStatus(ReservationStatus.ACTIVE);
+        List<RentedCarStruct> result = new ArrayList<>();
 
-                    LocalDateTime pickUpDate = reservation.getPickUpDate();
-                    LocalDateTime dropOffDate = reservation.getDropOffDate();
-                    long daysDiff = Duration.between(pickUpDate, dropOffDate).toDays();
+        for (Car car : rentedCars) {
+            // Find active reservation for this car from our list
+            Reservation activeReservation = activeReservations.stream()
+                    .filter(res -> res.getCar().getId().equals(car.getId()))
+                    .findFirst()
+                    .orElse(null);
 
-                    return new RentedCarStruct(
-                            car.getBrand(),
-                            car.getModel(),
-                            car.getCarType(),
-                            car.getTransmissionType(),
-                            car.getBarcode(),
-                            reservation.getReservationNumber(),
-                            reservation.getMember().getName(),
-                            reservation.getDropOffDate(),
-                            reservation.getDropOffLocation().getName(),
-                            daysDiff
-                    );
-                })
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
+            if (activeReservation != null) {
+                long daysDiff = Duration.between(
+                        activeReservation.getPickUpDate(),
+                        activeReservation.getDropOffDate()
+                ).toDays();
+
+                RentedCarStruct rentedCar = new RentedCarStruct(
+                        car.getBrand(),
+                        car.getModel(),
+                        car.getCarType(),
+                        car.getTransmissionType(),
+                        car.getBarcode(),
+                        activeReservation.getReservationNumber(),
+                        activeReservation.getMember().getName(),
+                        activeReservation.getDropOffDate(),
+                        activeReservation.getDropOffLocation().getName(),
+                        daysDiff
+                );
+                result.add(rentedCar);
+            }
+        }
+
+        return result;
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     public boolean deleteCar(String barcode) {
         Optional<Car> car = carRepository.findByBarcode(barcode);
@@ -82,6 +109,7 @@ public class CarService {
         car.setMileage(carDTO.mileage());
         car.setLicensePlate(carDTO.licensePlate());
         car.setStatus(CarStatus.AVAILABLE);
+        car.setReservations(new HashSet<>()); // Initialize reservations set
 
         Car savedCar = carRepository.save(car);
         return mapToDTO(savedCar);
