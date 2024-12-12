@@ -133,6 +133,9 @@ public class Reservation {
         return equipment;
     }
 
+
+
+
     public void setEquipment(List<Equipment> equipment) {
         this.equipment = equipment;
     }

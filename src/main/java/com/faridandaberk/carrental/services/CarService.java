@@ -1,5 +1,6 @@
 package com.faridandaberk.carrental.services;
 
+import com.faridandaberk.carrental.exception.ResourceNotFoundException;
 import com.faridandaberk.carrental.model.*;
 import com.faridandaberk.carrental.repository.CarRepository;
 import com.faridandaberk.carrental.repository.ReservationRepository;
@@ -16,27 +17,40 @@ import java.time.Duration;
 @Transactional
 public class CarService {
     private final CarRepository carRepository;
-    private final ReservationRepository reservationRepository; // Add this
+    private final ReservationRepository reservationRepository;
 
-    public CarService(CarRepository carRepository, ReservationRepository reservationRepository) { // Update constructor
+    public CarService(CarRepository carRepository, ReservationRepository reservationRepository) {
         this.carRepository = carRepository;
         this.reservationRepository = reservationRepository;
     }
 
     public List<CarStruct> searchAvailableCars(CarType carType, TransmissionType transmissionType) {
-        return carRepository.findByCarTypeAndTransmissionTypeAndStatus(carType, transmissionType, CarStatus.AVAILABLE)
-                .stream()
+        List<Car> availableCars = carRepository.findByCarTypeAndTransmissionTypeAndStatus(
+                carType,
+                transmissionType,
+                CarStatus.AVAILABLE
+        );
+
+        if (availableCars.isEmpty()) {
+            throw new ResourceNotFoundException("No available cars found with the specified criteria");
+        }
+
+        return availableCars.stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
     }
 
     public List<RentedCarStruct> getAllRentedCars() {
         List<Car> rentedCars = carRepository.findByStatusIn(Arrays.asList(CarStatus.LOANED, CarStatus.RESERVED));
+
+        if (rentedCars.isEmpty()) {
+            throw new ResourceNotFoundException("No rented cars found");
+        }
+
         List<Reservation> activeReservations = reservationRepository.findByStatus(ReservationStatus.ACTIVE);
         List<RentedCarStruct> result = new ArrayList<>();
 
         for (Car car : rentedCars) {
-            // Find active reservation for this car from our list
             Reservation activeReservation = activeReservations.stream()
                     .filter(res -> res.getCar().getId().equals(car.getId()))
                     .findFirst()
@@ -67,37 +81,35 @@ public class CarService {
         return result;
     }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     public boolean deleteCar(String barcode) {
-        Optional<Car> car = carRepository.findByBarcode(barcode);
-        if (car.isPresent() && car.get().getStatus() == CarStatus.AVAILABLE) {
-            carRepository.delete(car.get());
-            return true;
+        Car car = carRepository.findByBarcode(barcode)
+                .orElseThrow(() -> new ResourceNotFoundException("Car not found with barcode: " + barcode));
+
+        if (car.getStatus() != CarStatus.AVAILABLE) {
+            throw new IllegalStateException("Car cannot be deleted as it is not available");
         }
-        return false;
+
+        // Check if car was ever used in a reservation
+        List<Reservation> carReservations = reservationRepository.findByCar(car);
+        if (!carReservations.isEmpty()) {
+            throw new IllegalStateException("Car cannot be deleted as it has reservation history");
+        }
+
+        carRepository.delete(car);
+        return true;
     }
 
     public CarStruct addCar(CarStruct carDTO) {
+        // Validate input
+        if (carDTO == null) {
+            throw new IllegalArgumentException("Car data cannot be null");
+        }
+
+        // Check if car with same barcode already exists
+        if (carRepository.findByBarcode(carDTO.barcode()).isPresent()) {
+            throw new IllegalStateException("Car with this barcode already exists");
+        }
+
         Car car = new Car();
         car.setBarcode(carDTO.barcode());
         car.setBrand(carDTO.brand());
@@ -109,7 +121,7 @@ public class CarService {
         car.setMileage(carDTO.mileage());
         car.setLicensePlate(carDTO.licensePlate());
         car.setStatus(CarStatus.AVAILABLE);
-        car.setReservations(new HashSet<>()); // Initialize reservations set
+        car.setReservations(new HashSet<>());
 
         Car savedCar = carRepository.save(car);
         return mapToDTO(savedCar);

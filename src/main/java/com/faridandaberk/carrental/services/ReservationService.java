@@ -1,18 +1,13 @@
 package com.faridandaberk.carrental.services;
 
+import com.faridandaberk.carrental.exception.ResourceNotFoundException;
 import com.faridandaberk.carrental.model.*;
-import com.faridandaberk.carrental.repository.CarRepository;
-import com.faridandaberk.carrental.repository.EquipmentRepository;
-import com.faridandaberk.carrental.repository.LocationRepository;
-import com.faridandaberk.carrental.repository.MemberRepository;
-import com.faridandaberk.carrental.repository.ReservationRepository;
-import com.faridandaberk.carrental.repository.ServiceRepository;
+import com.faridandaberk.carrental.repository.*;
 import com.faridandaberk.carrental.struct.ReservationResponseStruct;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -40,56 +35,169 @@ public class ReservationService {
     public ReservationResponseStruct makeReservation(String carBarcode, int dayCount, Long memberId,
                                                      String pickupLocationCode, String dropoffLocationCode,
                                                      List<String> equipmentCodes, List<String> serviceCodes) {
+        // Validate input parameters
+        if (dayCount <= 0) {
+            throw new IllegalArgumentException("Day count must be positive");
+        }
 
+        // Find and validate car
         Car car = carRepository.findByBarcode(carBarcode)
-                .orElseThrow(() -> new IllegalArgumentException("Car not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Car not found with barcode: " + carBarcode));
 
+        if (car.getStatus() != CarStatus.AVAILABLE) {
+            throw new IllegalStateException("Car is not available for reservation");
+        }
+
+        // Find and validate member
         Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new IllegalArgumentException("Member not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Member not found with ID: " + memberId));
 
+        // Find and validate locations
         Location pickupLocation = locationRepository.findByCode(pickupLocationCode)
-                .orElseThrow(() -> new IllegalArgumentException("Pickup location not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Pickup location not found with code: " + pickupLocationCode));
 
         Location dropoffLocation = locationRepository.findByCode(dropoffLocationCode)
-                .orElseThrow(() -> new IllegalArgumentException("Dropoff location not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Dropoff location not found with code: " + dropoffLocationCode));
 
+        // Process equipment if provided
+        List<Equipment> equipmentList = new ArrayList<>();
+        if (equipmentCodes != null && !equipmentCodes.isEmpty()) {
+            equipmentList = equipmentCodes.stream()
+                    .map(code -> equipmentRepository.findByCode(code)
+                            .orElseThrow(() -> new ResourceNotFoundException("Equipment not found with code: " + code)))
+                    .collect(Collectors.toList());
+        }
 
+        // Process services if provided
+        List<com.faridandaberk.carrental.model.Service> serviceList = new ArrayList<>();
+        if (serviceCodes != null && !serviceCodes.isEmpty()) {
+            serviceList = serviceCodes.stream()
+                    .map(code -> serviceRepository.findByCode(code)
+                            .orElseThrow(() -> new ResourceNotFoundException("Service not found with code: " + code)))
+                    .collect(Collectors.toList());
+        }
+
+        // Create reservation
         Reservation reservation = new Reservation();
         reservation.setCar(car);
         reservation.setMember(member);
         reservation.setPickUpLocation(pickupLocation);
         reservation.setDropOffLocation(dropoffLocation);
-        reservation.setPickUpDate(LocalDateTime.now());
-        reservation.setDropOffDate(LocalDateTime.now().plusDays(dayCount));
-        reservation.setReturnDate(LocalDateTime.now().plusDays(dayCount));
+        reservation.setPickUpDate(LocalDateTime.now().plusDays(1)); // pickup date is sysdate+1
+        reservation.setDropOffDate(reservation.getPickUpDate().plusDays(dayCount));
         reservation.setStatus(ReservationStatus.ACTIVE);
         reservation.setReservationNumber(generateReservationNumber());
 
+        if (!equipmentList.isEmpty()) {
+            reservation.setEquipment(new ArrayList<>(equipmentList));
+        }
+        if (!serviceList.isEmpty()) {
+            reservation.setServices(new ArrayList<>(serviceList));
+
+        }
+
         Reservation savedReservation = reservationRepository.save(reservation);
 
-
+        // Update car status
         car.setStatus(CarStatus.LOANED);
         carRepository.save(car);
+
+        double totalCost = calculateTotalCost(car, dayCount, equipmentList, serviceList);
 
         return new ReservationResponseStruct(
                 savedReservation.getReservationNumber(),
                 pickupLocation.getName(),
                 dropoffLocation.getName(),
-                calculateTotalCost(car, dayCount, Collections.emptyList(), Collections.emptyList())
+                totalCost
         );
     }
 
-    private double calculateTotalCost(Car car, int dayCount, List<Equipment> equipment, List<com.faridandaberk.carrental.model.Service> services) {
+    public boolean addServiceToReservation(String reservationNumber, String serviceCode) {
+        Reservation reservation = reservationRepository.findByReservationNumber(reservationNumber)
+                .orElseThrow(() -> new ResourceNotFoundException("Reservation not found with number: " + reservationNumber));
 
+        com.faridandaberk.carrental.model.Service service = serviceRepository.findByCode(serviceCode)
+                .orElseThrow(() -> new ResourceNotFoundException("Service not found with code: " + serviceCode));
+
+        if (reservation.getServices().contains(service)) {
+            throw new IllegalStateException("Service is already added to this reservation");
+        }
+
+        reservation.getServices().add(service);
+        reservationRepository.save(reservation);
+        return true;
+    }
+
+    public boolean addEquipmentToReservation(String reservationNumber, String equipmentCode) {
+        Reservation reservation = reservationRepository.findByReservationNumber(reservationNumber)
+                .orElseThrow(() -> new ResourceNotFoundException("Reservation not found with number: " + reservationNumber));
+
+        Equipment equipment = equipmentRepository.findByCode(equipmentCode)
+                .orElseThrow(() -> new ResourceNotFoundException("Equipment not found with code: " + equipmentCode));
+
+        if (reservation.getEquipment().contains(equipment)) {
+            throw new IllegalStateException("Equipment is already added to this reservation");
+        }
+
+        reservation.getEquipment().add(equipment);
+        reservationRepository.save(reservation);
+        return true;
+    }
+
+    public boolean returnCar(String reservationNumber) {
+        Reservation reservation = reservationRepository.findByReservationNumber(reservationNumber)
+                .orElseThrow(() -> new ResourceNotFoundException("Reservation not found with number: " + reservationNumber));
+
+        if (reservation.getStatus() != ReservationStatus.ACTIVE) {
+            throw new IllegalStateException("Reservation is not active");
+        }
+
+        reservation.setStatus(ReservationStatus.COMPLETED);
+        reservation.setReturnDate(LocalDateTime.now());
+        reservation.getCar().setStatus(CarStatus.AVAILABLE);
+
+        reservationRepository.save(reservation);
+        return true;
+    }
+
+    public boolean cancelReservation(String reservationNumber) {
+        Reservation reservation = reservationRepository.findByReservationNumber(reservationNumber)
+                .orElseThrow(() -> new ResourceNotFoundException("Reservation not found with number: " + reservationNumber));
+
+        if (reservation.getStatus() != ReservationStatus.ACTIVE) {
+            throw new IllegalStateException("Only active reservations can be cancelled");
+        }
+
+        reservation.setStatus(ReservationStatus.CANCELLED);
+        reservation.getCar().setStatus(CarStatus.AVAILABLE);
+
+        reservationRepository.save(reservation);
+        return true;
+    }
+
+    public boolean deleteReservation(String reservationNumber) {
+        Reservation reservation = reservationRepository.findByReservationNumber(reservationNumber)
+                .orElseThrow(() -> new ResourceNotFoundException("Reservation not found with number: " + reservationNumber));
+
+        // Disassociate relationships before deletion
+        reservation.setMember(null);
+        reservation.setCar(null);
+        reservation.setEquipment(new ArrayList<>());
+        reservation.setServices(new ArrayList<>());
+
+        reservationRepository.delete(reservation);
+        return true;
+    }
+
+    private double calculateTotalCost(Car car, int dayCount, List<Equipment> equipment,
+                                      List<com.faridandaberk.carrental.model.Service> services) {
         double totalCost = car.getDailyPrice() * dayCount;
-
 
         if (equipment != null) {
             totalCost += equipment.stream()
                     .mapToDouble(Equipment::getPrice)
                     .sum();
         }
-
 
         if (services != null) {
             totalCost += services.stream()
@@ -100,79 +208,8 @@ public class ReservationService {
         return totalCost;
     }
 
-    public boolean addServiceToReservation(String reservationNumber, String serviceCode) {
-        Optional<Reservation> reservationOptional = reservationRepository.findByReservationNumber(reservationNumber);
-        if (reservationOptional.isEmpty()) {
-            return false;
-        }
-
-        Reservation reservation = reservationOptional.get();
-        Optional<com.faridandaberk.carrental.model.Service> serviceOptional = serviceRepository.findByCode(serviceCode);
-        if (serviceOptional.isEmpty()) {
-            return false;
-        }
-
-        reservation.getServices().add(serviceOptional.get());
-        reservationRepository.save(reservation);
-        return true;
-    }
-
-    public boolean addEquipmentToReservation(String reservationNumber, String equipmentCode) {
-        Optional<Reservation> reservationOptional = reservationRepository.findByReservationNumber(reservationNumber);
-        if (reservationOptional.isEmpty()) {
-            return false;
-        }
-
-        Reservation reservation = reservationOptional.get();
-        Optional<Equipment> equipmentOptional = equipmentRepository.findByCode(equipmentCode);
-        if (equipmentOptional.isEmpty()) {
-            return false;
-        }
-
-        reservation.getEquipment().add(equipmentOptional.get());
-        reservationRepository.save(reservation);
-        return true;
-    }
-
-    public boolean returnCar(String reservationNumber) {
-        Optional<Reservation> reservationOptional = reservationRepository.findByReservationNumber(reservationNumber);
-        if (reservationOptional.isEmpty()) {
-            return false;
-        }
-
-        Reservation reservation = reservationOptional.get();
-        reservation.setStatus(ReservationStatus.COMPLETED);
-        reservation.getCar().setStatus(CarStatus.AVAILABLE);
-        reservationRepository.save(reservation);
-        return true;
-    }
-
-    public boolean cancelReservation(String reservationNumber) {
-        Optional<Reservation> reservationOptional = reservationRepository.findByReservationNumber(reservationNumber);
-        if (reservationOptional.isEmpty()) {
-            return false;
-        }
-
-        Reservation reservation = reservationOptional.get();
-        reservation.setStatus(ReservationStatus.CANCELLED);
-        reservation.getCar().setStatus(CarStatus.AVAILABLE);
-        reservationRepository.save(reservation);
-        return true;
-    }
-
-    public boolean deleteReservation(String reservationNumber) {
-        Optional<Reservation> reservationOptional = reservationRepository.findByReservationNumber(reservationNumber);
-        if (reservationOptional.isEmpty()) {
-            return false;
-        }
-
-        Reservation reservation = reservationOptional.get();
-        reservationRepository.delete(reservation);
-        return true;
-    }
-
     private String generateReservationNumber() {
-
-        return String.format("%08d", reservationRepository.count() + 1);
+        long count = reservationRepository.count() + 1;
+        return String.format("%08d", count);
     }
 }

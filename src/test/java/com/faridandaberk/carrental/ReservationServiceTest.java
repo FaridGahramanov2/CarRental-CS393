@@ -49,7 +49,7 @@ class ReservationServiceTest {
         MemberStruct memberDTO = new MemberStruct(
                 "John Doe",
                 "123 Main St",
-                "test.user@example.com",  // Changed email
+                "test.user@example.com",
                 "555-1234",
                 "TEST_DL_123"
         );

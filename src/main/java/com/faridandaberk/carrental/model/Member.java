@@ -14,6 +14,9 @@ public class Member {
     @Column(nullable = false)
     private String name;
 
+    @Column(nullable = true)
+    private String password;
+
     public Member(Long id, String name, String address, String email, String phone, String drivingLicenseNumber, Set<Reservation> reservations) {
         this.id = id;
         this.name = name;
