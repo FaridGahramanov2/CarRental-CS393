@@ -83,7 +83,8 @@ public class ReservationService {
         reservation.setMember(member);
         reservation.setPickUpLocation(pickupLocation);
         reservation.setDropOffLocation(dropoffLocation);
-        reservation.setPickUpDate(LocalDateTime.now().plusDays(1)); // pickup date is sysdate+1
+        reservation.setCreationDate(LocalDateTime.now());
+        reservation.setPickUpDate(LocalDateTime.now().plusDays(1));
         reservation.setDropOffDate(reservation.getPickUpDate().plusDays(dayCount));
         reservation.setStatus(ReservationStatus.ACTIVE);
         reservation.setReservationNumber(generateReservationNumber());
@@ -93,15 +94,17 @@ public class ReservationService {
         }
         if (!serviceList.isEmpty()) {
             reservation.setServices(new ArrayList<>(serviceList));
-
         }
 
+        // Save reservation
         Reservation savedReservation = reservationRepository.save(reservation);
 
         // Update car status
         car.setStatus(CarStatus.LOANED);
         carRepository.save(car);
+        carRepository.flush(); // Ensure car status is updated
 
+        // Calculate total cost
         double totalCost = calculateTotalCost(car, dayCount, equipmentList, serviceList);
 
         return new ReservationResponseStruct(
@@ -110,6 +113,69 @@ public class ReservationService {
                 dropoffLocation.getName(),
                 totalCost
         );
+    }
+
+    @Transactional
+    public boolean cancelReservation(String reservationNumber) {
+        Reservation reservation = reservationRepository.findByReservationNumber(reservationNumber)
+                .orElseThrow(() -> new ResourceNotFoundException("Reservation not found with number: " + reservationNumber));
+
+        reservation.setStatus(ReservationStatus.CANCELLED);
+
+        Car car = reservation.getCar();
+        if (car != null) {
+            car.setStatus(CarStatus.AVAILABLE);
+            carRepository.save(car);
+        }
+
+        reservationRepository.save(reservation);
+        carRepository.flush();
+        return true;
+    }
+
+    @Transactional
+    public boolean returnCar(String reservationNumber) {
+        Reservation reservation = reservationRepository.findByReservationNumber(reservationNumber)
+                .orElseThrow(() -> new ResourceNotFoundException("Reservation not found with number: " + reservationNumber));
+
+        reservation.setStatus(ReservationStatus.COMPLETED);
+        reservation.setReturnDate(LocalDateTime.now());
+
+        Car car = reservation.getCar();
+        if (car != null) {
+            car.setStatus(CarStatus.AVAILABLE);
+            carRepository.save(car);
+        }
+
+        reservationRepository.save(reservation);
+        carRepository.flush();
+        return true;
+    }
+
+    @Transactional
+    public boolean deleteReservation(String reservationNumber) {
+        Reservation reservation = reservationRepository.findByReservationNumber(reservationNumber)
+                .orElseThrow(() -> new ResourceNotFoundException("Reservation not found with number: " + reservationNumber));
+
+        // Update car status to AVAILABLE before deleting
+        Car car = reservation.getCar();
+        if (car != null) {
+            car.setStatus(CarStatus.AVAILABLE);
+            carRepository.save(car);
+        }
+
+        // Disassociate relationships before deletion
+        if (reservation.getMember() != null) {
+            reservation.getMember().getReservations().remove(reservation);
+        }
+        reservation.setMember(null);
+        reservation.setCar(null);
+        reservation.getEquipment().clear();
+        reservation.getServices().clear();
+
+        reservationRepository.delete(reservation);
+        carRepository.flush();
+        return true;
     }
 
     public boolean addServiceToReservation(String reservationNumber, String serviceCode) {
@@ -141,51 +207,6 @@ public class ReservationService {
 
         reservation.getEquipment().add(equipment);
         reservationRepository.save(reservation);
-        return true;
-    }
-
-    public boolean returnCar(String reservationNumber) {
-        Reservation reservation = reservationRepository.findByReservationNumber(reservationNumber)
-                .orElseThrow(() -> new ResourceNotFoundException("Reservation not found with number: " + reservationNumber));
-
-        if (reservation.getStatus() != ReservationStatus.ACTIVE) {
-            throw new IllegalStateException("Reservation is not active");
-        }
-
-        reservation.setStatus(ReservationStatus.COMPLETED);
-        reservation.setReturnDate(LocalDateTime.now());
-        reservation.getCar().setStatus(CarStatus.AVAILABLE);
-
-        reservationRepository.save(reservation);
-        return true;
-    }
-
-    public boolean cancelReservation(String reservationNumber) {
-        Reservation reservation = reservationRepository.findByReservationNumber(reservationNumber)
-                .orElseThrow(() -> new ResourceNotFoundException("Reservation not found with number: " + reservationNumber));
-
-        if (reservation.getStatus() != ReservationStatus.ACTIVE) {
-            throw new IllegalStateException("Only active reservations can be cancelled");
-        }
-
-        reservation.setStatus(ReservationStatus.CANCELLED);
-        reservation.getCar().setStatus(CarStatus.AVAILABLE);
-
-        reservationRepository.save(reservation);
-        return true;
-    }
-
-    public boolean deleteReservation(String reservationNumber) {
-        Reservation reservation = reservationRepository.findByReservationNumber(reservationNumber)
-                .orElseThrow(() -> new ResourceNotFoundException("Reservation not found with number: " + reservationNumber));
-
-        // Disassociate relationships before deletion
-        reservation.setMember(null);
-        reservation.setCar(null);
-        reservation.setEquipment(new ArrayList<>());
-        reservation.setServices(new ArrayList<>());
-
-        reservationRepository.delete(reservation);
         return true;
     }
 

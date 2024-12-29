@@ -1,18 +1,18 @@
 package com.faridandaberk.carrental.controller;
 
+import com.faridandaberk.carrental.exception.ResourceNotFoundException;
 import com.faridandaberk.carrental.services.ReservationService;
+import com.faridandaberk.carrental.struct.ReservationRequestDTO;
 import com.faridandaberk.carrental.struct.ReservationResponseStruct;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/reservations")
@@ -24,29 +24,36 @@ public class ReservationController {
         this.reservationService = reservationService;
     }
 
+    @PostMapping
     @Operation(
             summary = "Make a reservation",
             description = "Create a new reservation for a car rental",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Reservation created successfully",
                             content = @Content(schema = @Schema(implementation = ReservationResponseStruct.class))),
-                    @ApiResponse(responseCode = "406", description = "Invalid reservation details")
+                    @ApiResponse(responseCode = "400", description = "Invalid request parameters"),
+                    @ApiResponse(responseCode = "404", description = "Car, member, or location not found"),
+                    @ApiResponse(responseCode = "406", description = "Car is not available")
             }
     )
-    @PostMapping
-    public ResponseEntity<ReservationResponseStruct> makeReservation(
-            @RequestParam String carBarcode,
-            @RequestParam int dayCount,
-            @RequestParam Long memberId,
-            @RequestParam String pickupLocationCode,
-            @RequestParam String dropoffLocationCode,
-            @RequestParam(required = false) List<String> equipmentCodes,
-            @RequestParam(required = false) List<String> serviceCodes) {
-        ReservationResponseStruct response = reservationService.makeReservation(
-                carBarcode, dayCount, memberId, pickupLocationCode,
-                dropoffLocationCode, equipmentCodes, serviceCodes);
-        return response != null ? ResponseEntity.ok(response) :
-                ResponseEntity.status(HttpStatus.NOT_ACCEPTABLE).build();
+    public ResponseEntity<ReservationResponseStruct> makeReservation(@Valid @RequestBody ReservationRequestDTO request) {
+        try {
+            ReservationResponseStruct response = reservationService.makeReservation(
+                    request.carBarcode(),
+                    request.dayCount(),
+                    request.memberId(),
+                    request.pickupLocationCode(),
+                    request.dropoffLocationCode(),
+                    request.equipmentCodes(),
+                    request.serviceCodes());
+            return ResponseEntity.ok(response);
+        } catch (ResourceNotFoundException e) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.NOT_ACCEPTABLE).build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
     }
 
     @Operation(

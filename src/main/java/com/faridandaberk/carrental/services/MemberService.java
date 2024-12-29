@@ -2,7 +2,6 @@ package com.faridandaberk.carrental.services;
 
 import com.faridandaberk.carrental.exception.ResourceNotFoundException;
 import com.faridandaberk.carrental.model.Member;
-import com.faridandaberk.carrental.model.Reservation;
 import com.faridandaberk.carrental.model.ReservationStatus;
 import com.faridandaberk.carrental.repository.MemberRepository;
 import com.faridandaberk.carrental.struct.MemberStruct;
@@ -23,7 +22,6 @@ public class MemberService {
     }
 
     public MemberStruct registerMember(MemberStruct memberDTO) {
-
         // Validate input
         if (memberDTO == null) {
             throw new IllegalArgumentException("Member data cannot be null");
@@ -31,14 +29,15 @@ public class MemberService {
 
         validateMemberData(memberDTO);
 
-        // Check if email is already registered
-        if (memberRepository.findByEmail(memberDTO.email()).isPresent()) {
+        // Check for existing email/license/phone
+        if (memberRepository.existsByEmail(memberDTO.email())) {
             throw new IllegalStateException("Email is already registered");
         }
-
-        // Check if driving license is already registered
-        if (memberRepository.findByDrivingLicenseNumber(memberDTO.drivingLicenseNumber()).isPresent()) {
+        if (memberRepository.existsByDrivingLicenseNumber(memberDTO.drivingLicenseNumber())) {
             throw new IllegalStateException("Driving license is already registered");
+        }
+        if (memberRepository.existsByPhone(memberDTO.phone())) {
+            throw new IllegalStateException("Phone number is already registered");
         }
 
         Member member = new Member();
@@ -47,6 +46,9 @@ public class MemberService {
         member.setPhone(memberDTO.phone());
         member.setAddress(memberDTO.address());
         member.setDrivingLicenseNumber(memberDTO.drivingLicenseNumber());
+        if (memberDTO.password() != null) {
+            member.setPassword(memberDTO.password()); // In real app, should encrypt password
+        }
         member.setReservations(new HashSet<>());
 
         Member savedMember = memberRepository.save(member);
@@ -73,28 +75,38 @@ public class MemberService {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new ResourceNotFoundException("Member not found with id: " + memberId));
 
+        // Validate and update each field if provided
         if (memberDTO.email() != null && !memberDTO.email().equals(member.getEmail())) {
-            memberRepository.findByEmail(memberDTO.email()).ifPresent(m -> {
+            if (!isValidEmail(memberDTO.email())) {
+                throw new IllegalArgumentException("Invalid email format");
+            }
+            if (memberRepository.existsByEmail(memberDTO.email())) {
                 throw new IllegalStateException("Email is already in use");
-            });
+            }
             member.setEmail(memberDTO.email());
+        }
+
+        if (memberDTO.phone() != null && !memberDTO.phone().equals(member.getPhone())) {
+            if (!isValidPhone(memberDTO.phone())) {
+                throw new IllegalArgumentException("Invalid phone format");
+            }
+            if (memberRepository.existsByPhone(memberDTO.phone())) {
+                throw new IllegalStateException("Phone is already in use");
+            }
+            member.setPhone(memberDTO.phone());
         }
 
         if (memberDTO.name() != null) {
             member.setName(memberDTO.name());
-        }
-        if (memberDTO.phone() != null) {
-            member.setPhone(memberDTO.phone());
         }
         if (memberDTO.address() != null) {
             member.setAddress(memberDTO.address());
         }
         if (memberDTO.drivingLicenseNumber() != null &&
                 !memberDTO.drivingLicenseNumber().equals(member.getDrivingLicenseNumber())) {
-            memberRepository.findByDrivingLicenseNumber(memberDTO.drivingLicenseNumber())
-                    .ifPresent(m -> {
-                        throw new IllegalStateException("Driving license is already registered");
-                    });
+            if (memberRepository.existsByDrivingLicenseNumber(memberDTO.drivingLicenseNumber())) {
+                throw new IllegalStateException("Driving license is already registered");
+            }
             member.setDrivingLicenseNumber(memberDTO.drivingLicenseNumber());
         }
 
@@ -106,12 +118,28 @@ public class MemberService {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new ResourceNotFoundException("Member not found with id: " + memberId));
 
-        // Check if member has active reservations
         if (hasActiveReservations(member)) {
             throw new IllegalStateException("Cannot delete member with active reservations");
         }
 
         memberRepository.delete(member);
+        return true;
+    }
+
+    public boolean resetPassword(Long memberId, String newPassword) {
+        if (newPassword == null || newPassword.trim().isEmpty()) {
+            throw new IllegalArgumentException("New password cannot be empty");
+        }
+
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new ResourceNotFoundException("Member not found with id: " + memberId));
+
+        if (!isValidPassword(newPassword)) {
+            throw new IllegalArgumentException("Password does not meet security requirements");
+        }
+
+        member.setPassword(newPassword); // In real app, should encrypt password
+        memberRepository.save(member);
         return true;
     }
 
@@ -128,10 +156,10 @@ public class MemberService {
         if (memberDTO.name() == null || memberDTO.name().trim().isEmpty()) {
             throw new IllegalArgumentException("Name cannot be empty");
         }
-        if (memberDTO.email() == null || !isValidEmail(memberDTO.email())) {
+        if (!isValidEmail(memberDTO.email())) {
             throw new IllegalArgumentException("Invalid email format");
         }
-        if (memberDTO.phone() == null || !isValidPhone(memberDTO.phone())) {
+        if (!isValidPhone(memberDTO.phone())) {
             throw new IllegalArgumentException("Invalid phone number format");
         }
         if (memberDTO.drivingLicenseNumber() == null || memberDTO.drivingLicenseNumber().trim().isEmpty()) {
@@ -140,57 +168,31 @@ public class MemberService {
     }
 
     private boolean isValidEmail(String email) {
-        // Basic email validation
-        return email.matches("^[A-Za-z0-9+_.-]+@(.+)$");
+        return email != null && email.matches("^[A-Za-z0-9+_.-]+@(.+)$");
     }
 
     private boolean isValidPhone(String phone) {
-        // Basic phone number validation
-        return phone.matches("^\\+?[0-9]{10,15}$");
+        return phone != null && phone.matches("\\d{10}");
+    }
+
+    private boolean isValidPassword(String password) {
+        return password != null &&
+                password.length() >= 8 &&
+                password.matches(".*\\d.*") &&
+                password.matches(".*[A-Z].*") &&
+                password.matches(".*[a-z].*");
     }
 
     private MemberStruct mapToDTO(Member member) {
         return new MemberStruct(
                 member.getName(),
-                member.getAddress(),
                 member.getEmail(),
                 member.getPhone(),
+                member.getAddress(),
                 member.getDrivingLicenseNumber()
         );
     }
 
-    public boolean resetPassword(Long memberId, String newPassword) {
-        // Validate input
-        if (newPassword == null || newPassword.trim().isEmpty()) {
-            throw new IllegalArgumentException("New password cannot be empty");
-        }
 
-        // Find member
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new ResourceNotFoundException("Member not found with id: " + memberId));
 
-        // Validate password requirements
-        if (!isValidPassword(newPassword)) {
-            throw new IllegalArgumentException("Password does not meet security requirements");
-        }
-
-        // Since there's no password field in your Member entity,
-        // you might want to either:
-        // 1. Add a password field to the Member entity
-        // 2. Remove this functionality
-        // For now, returning true as placeholder
-        return true;
-    }
-
-    private boolean isValidPassword(String password) {
-        // Password validation requirements:
-        // At least 8 characters
-        // Contains at least one digit
-        // Contains at least one uppercase letter
-        // Contains at least one lowercase letter
-        return password.length() >= 8 &&
-                password.matches(".*\\d.*") &&
-                password.matches(".*[A-Z].*") &&
-                password.matches(".*[a-z].*");
-    }
 }
